@@ -1,4 +1,4 @@
-FROM scratch
+FROM {{docker.from_image}}
 COPY . /
 
 {% if docker.entrypoint -%}

@@ -55,6 +55,10 @@ def parse_args():
                         default=None,
                         help='Add WORKDIR={arg} in Dockerfile')
 
+    parser.add_argument('--from_image',
+                        default=None,
+                        help='image name in the first line of Dockerfile')
+
     parser.add_argument('--symlinks', '-L',
                         default='copy-unsafe',
                         help='One of preserve, copy-unsafe, '
@@ -119,6 +123,7 @@ def main():
     app = Dockerize(cmd=args.cmd,
                     runtime=args.runtime,
                     buildcmd=args.buildcmd,
+                    from_image=args.from_image,
                     entrypoint=args.entrypoint,
                     tag=args.tag,
                     targetdir=args.output_dir,

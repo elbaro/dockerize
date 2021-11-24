@@ -30,24 +30,27 @@ class SymlinkOptions(object):
 
 
 class Dockerize(object):
-
-    def __init__(self,
-                 cmd=None,
-                 entrypoint=None,
-                 targetdir=None,
-                 tag=None,
-                 runtime=None,
-                 buildcmd=None,
-                 symlinks=SymlinkOptions.PRESERVE,
-                 envs=None,
-                 workdir=None,
-                 build=True):
+    def __init__(
+        self,
+        cmd=None,
+        entrypoint=None,
+        targetdir=None,
+        tag=None,
+        runtime=None,
+        buildcmd=None,
+        from_image=None,
+        symlinks=SymlinkOptions.PRESERVE,
+        envs=None,
+        workdir=None,
+        build=True,
+    ):
 
         self.docker = {}
         self.docker['runtime'] = runtime if runtime else 'docker'
         self.docker['buildcmd'] = buildcmd if buildcmd else 'build'
         self.docker['envs'] = envs if envs else []
         self.docker['workdir'] = workdir
+        self.docker['from_image'] = from_image or 'scratch'
 
         if cmd:
             self.docker['cmd'] = json.dumps(shlex.split(cmd))
@@ -69,10 +72,10 @@ class Dockerize(object):
         self.env = Environment(loader=PackageLoader('dockerize', 'templates'))
 
     def add_user(self, user):
-        '''Import a user into /etc/passwd on the image.  You can specify a
+        """Import a user into /etc/passwd on the image.  You can specify a
         username, in which case add_user will look up the password entry
         via getpwnam(), or you can provide a colon-delimited password
-        entry, which will be used verbatim.'''
+        entry, which will be used verbatim."""
 
         LOG.info('adding user %s', user)
         if ':' in user:
@@ -81,15 +84,19 @@ class Dockerize(object):
             pwent = pwd.getpwnam(user)
             self.users.append(':'.join(str(x) for x in pwent))
             grent = grp.getgrgid(pwent.pw_gid)
-            self.groups.append(':'.join(str(x) for x in
-                                        grent[:3] + (','.join(grent[3]),)
-                                        if not isinstance(x, list)))
+            self.groups.append(
+                ':'.join(
+                    str(x)
+                    for x in grent[:3] + (','.join(grent[3]),)
+                    if not isinstance(x, list)
+                )
+            )
 
     def add_group(self, group):
-        '''Import a group into /etc/group on the image.  You can specify a
+        """Import a group into /etc/group on the image.  You can specify a
         group name, in which case add_group will look up the group entry
         via getgrnam(), or you can provide a colon-delimited group entry,
-        which will be used verbatim.'''
+        which will be used verbatim."""
 
         LOG.info('adding group %s', group)
         if ':' in group:
@@ -99,25 +106,24 @@ class Dockerize(object):
             self.groups.append(':'.join(str(x) for x in grent))
 
     def add_file(self, src, dst=None):
-        '''Add a file to the list of files that will be installed into the
-        image.'''
+        """Add a file to the list of files that will be installed into the
+        image."""
 
         if dst is None:
             dst = src
 
         if not dst.startswith('/'):
-            raise ValueError('%s: container paths must be fully '
-                             'qualified' % dst)
+            raise ValueError('%s: container paths must be fully ' 'qualified' % dst)
 
         self.paths.add((src, dst))
 
     def build(self):
-        '''Call this method to produce a Docker image.  It will either
+        """Call this method to produce a Docker image.  It will either
         create a temporary working directory or populate a specific
         directy, depending on the setting of targetdir.  It will populate
         this will the files you have specified via add_file and any shared
         library depdencies.  Finally, it will generate a Dockerfile and
-        call "docker build" to build the image.'''
+        call "docker build" to build the image."""
 
         LOG.info('start build process')
         cleanup = False
@@ -138,39 +144,41 @@ class Dockerize(object):
                 self.build_image()
         finally:
             if cleanup:
-                shutil.rmtree(self.targetdir,
-                              ignore_errors=True)
+                shutil.rmtree(self.targetdir, ignore_errors=True)
 
     def generate_dockerfile(self):
         LOG.info('generating Dockerfile')
         tmpl = self.env.get_template('Dockerfile')
         with open(os.path.join(self.targetdir, 'Dockerfile'), 'w') as fde:
-            fde.write(tmpl.render(controller=self,
-                                  docker=self.docker))
+            fde.write(tmpl.render(controller=self, docker=self.docker))
 
     def makedirs(self, path):
         if not os.path.isdir(path):
             os.makedirs(path)
 
     def populate(self):
-        '''Add config files to the image using built-in templates.  This is
+        """Add config files to the image using built-in templates.  This is
         responsbile for creating /etc/passwd and /etc/group, among other
-        files.'''
+        files."""
 
         LOG.info('populating misc config files')
         self.makedirs(os.path.join(self.targetdir, 'etc'))
         for path in ['passwd', 'group', 'nsswitch.conf']:
             tmpl = self.env.get_template(path)
             with open(os.path.join(self.targetdir, 'etc', path), 'w') as fde:
-                fde.write(tmpl.render(controller=self,
-                                      docker=self.docker,
-                                      users=self.users,
-                                      groups=self.groups))
+                fde.write(
+                    tmpl.render(
+                        controller=self,
+                        docker=self.docker,
+                        users=self.users,
+                        groups=self.groups,
+                    )
+                )
 
     def copy_file(self, src, dst=None, symlinks=None):
-        '''Copy a file into the image.  This uses "rsync" to perform the
+        """Copy a file into the image.  This uses "rsync" to perform the
         actual copy, since rsync has robust handling of directory trees and
-        symlinks.'''
+        symlinks."""
 
         if dst is None:
             dst = src
@@ -200,8 +208,8 @@ class Dockerize(object):
         subprocess.check_call(cmd)
 
     def resolve_deps(self):
-        '''Uses the dockerize.depsolver.DepSolver class to find all the shared
-        library dependencies of files installed into the Docker image.'''
+        """Uses the dockerize.depsolver.DepSolver class to find all the shared
+        library dependencies of files installed into the Docker image."""
 
         deps = DepSolver()
 
@@ -224,8 +232,8 @@ class Dockerize(object):
                     self.copy_file(src, symlinks=SymlinkOptions.COPY_ALL)
 
     def copy_files(self):
-        '''Process the list of paths generated via add_file and copy items
-        into the image.'''
+        """Process the list of paths generated via add_file and copy items
+        into the image."""
 
         for src, dst in self.paths:
             for srcitem in glob.iglob(src):
